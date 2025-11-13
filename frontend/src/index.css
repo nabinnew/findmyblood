@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: customFont;
+  src: url(../public/fonts/HelveticaNowDisplay-ExtraBold_Qqt_sGOvuc_Z0ZOJEQucI.woff2);
+}
+@theme {
+  --breakpoint-xs: 480px;
+}
