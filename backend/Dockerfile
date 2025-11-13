@@ -1,59 +1,34 @@
-# Use official PHP 8.2 image with Apache
+# PHP 8.2 with Apache
 
 FROM php:8.2-apache
  
-# Install system dependencies and PHP extensions
+# Install dependencies
 
-RUN apt-get update && apt-get install -y \
-
-    git unzip zip libpng-dev libonig-dev libxml2-dev libzip-dev && \
-
-    docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip && \
-
-    a2enmod rewrite
+RUN apt-get update && apt-get install -y git unzip libzip-dev zip libpng-dev
  
-# Set working directory
+# Enable extensions
 
-WORKDIR /var/www/html
+RUN docker-php-ext-install pdo pdo_pgsql zip gd
  
-# Copy all files
-
-COPY . .
- 
-# Install Composer
+# Install composer
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+ 
+WORKDIR /var/www/html
+ 
+# Copy project files
+
+COPY . .
  
 # Install Laravel dependencies
 
 RUN composer install --no-dev --optimize-autoloader
  
-# Fix Apache Document Root (force override)
-
-RUN sed -i 's#/var/www/html#/var/www/html/public#g' /etc/apache2/sites-available/000-default.conf
-
-RUN sed -i 's#/var/www/html#/var/www/html/public#g' /etc/apache2/apache2.conf
- 
-# Enable .htaccess (important for Laravel routing)
-
-RUN echo "<Directory /var/www/html/public>\n\
-
-    AllowOverride All\n\
-
-    Require all granted\n\
-</Directory>" > /etc/apache2/conf-available/laravel.conf && \
-
-    a2enconf laravel
- 
-# Set permissions
+# Permissions
 
 RUN chmod -R 777 storage bootstrap/cache
  
-# Expose port 80
-
 EXPOSE 80
- 
-# Start Apache
 
 CMD ["apache2-foreground"]
 
