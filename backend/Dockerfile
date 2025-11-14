@@ -75,23 +75,12 @@ RUN echo '<Directory /var/www/html/public>\n\
 EXPOSE 80
 
 # =============================
-# Wait for PostgreSQL and run migrations
+# Copy wait-for-db script
 # =============================
 COPY wait-for-db.sh /wait-for-db.sh
 RUN chmod +x /wait-for-db.sh
 
-# CMD: Wait for DB, run migrations, start Apache
-CMD ["/wait-for-db.sh", "php", "artisan", "migrate", "--force", "&&", "apache2-foreground"]
-
 # =============================
-# Notes:
-# 1. Make sure your .env has correct Postgres URL with SSL:
-#    DB_CONNECTION=pgsql
-#    DB_HOST=dpg-xxxx.singapore-postgres.render.com
-#    DB_PORT=5432
-#    DB_DATABASE=bloodline_db
-#    DB_USERNAME=postgres
-#    DB_PASSWORD=yourpassword
-#    PGSSLMODE=require
-# 2. `wait-for-db.sh` ensures the container waits for the database.
+# Start container
 # =============================
+CMD ["/wait-for-db.sh"]
