@@ -7,7 +7,8 @@ use Illuminate\Support\Facades\Storage;
 use App\Http\Controllers\Controller;
 use App\Models\DonorModel;
 use Illuminate\Http\Request;
- use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
   
 class DonarsController extends Controller
 {
@@ -203,67 +204,76 @@ public function search(Request $request)
     $request->validate([
         'blood_group' => 'required|string',
         'location'    => 'nullable|string',
-        'radius'      => 'nullable|numeric',
     ]);
 
     $bloodGroup = $request->blood_group;
     $locationInput = $request->location;
-    $radius = (float) ($request->radius ?? 2);
+    $radius = (float) ($request->radius ?? 2); // default radius 2 km
 
-    $query = DonorModel::where('blood_group', $bloodGroup)
-        ->where('status', 1);
-
-    // Extract user lat/lng
     $lat = null;
     $lng = null;
 
+    // Extract lat/lng
     if ($locationInput && strpos($locationInput, ',') !== false) {
         [$lat, $lng] = array_map('trim', explode(',', $locationInput));
+
         if (!is_numeric($lat) || !is_numeric($lng)) {
             $lat = $lng = null;
         }
     }
 
-    if (!is_null($lat) && !is_null($lng)) {
+    // No coordinates → return all donors of that blood group
+    if (is_null($lat) || is_null($lng)) {
+        $donors = DonorModel::where('blood_group', $bloodGroup)
+            ->where('status', 1)
+            ->select('contact', 'blood_group', 'location')
+            ->get();
 
-        // PostgreSQL version of Haversine
-      $haversine = "
-    (6371 * acos(
-        cos(radians(?)) *
-        cos(radians(CAST(split_part(location, ',', 1) AS DOUBLE PRECISION))) *
-        cos(radians(CAST(split_part(location, ',', 2) AS DOUBLE PRECISION)) - radians(?)) +
-        sin(radians(?)) *
-        sin(radians(CAST(split_part(location, ',', 1) AS DOUBLE PRECISION)))
-    ))
-";
+        foreach ($donors as $donor) {
+            $donor->municipality = $this->getMunicipality($donor->location);
+        }
 
-$donors = $query->selectRaw(
-    "contact, blood_group, location, {$haversine} AS distance",
-    [$lat, $lng, $lat] // bindings for SELECT
-)
-->havingRaw(
-    "{$haversine} <= ?",         // HAVING condition
-    [$lat, $lng, $lat, $radius]  // bindings for HAVING
-)
-->orderBy('distance')
-->limit(10)
-->get();
-
-
-    } else {
-        $donors = $query->select('contact', 'blood_group', 'location')->get();
+        return response()->json([
+            'success' => true,
+            'data' => $donors
+        ]);
     }
 
-    // Add Municipality
+    // PostgreSQL compatible Haversine formula
+    $haversine = "
+        (6371 * acos(
+            cos(radians(?)) *
+            cos(radians(CAST(split_part(location, ',', 1) AS DOUBLE PRECISION))) *
+            cos(radians(CAST(split_part(location, ',', 2) AS DOUBLE PRECISION)) - radians(?)) +
+            sin(radians(?)) *
+            sin(radians(CAST(split_part(location, ',', 1) AS DOUBLE PRECISION)))
+        ))
+    ";
+
+    // Build subquery
+    $sub = DonorModel::selectRaw(
+        "contact, blood_group, location, {$haversine} AS distance",
+        [$lat, $lng, $lat]
+    )
+    ->where('blood_group', $bloodGroup)
+    ->where('status', 1);
+
+    // Final PG-safe query using subquery
+    $donors = DB::table(DB::raw("(" . $sub->toSql() . ") as sub"))
+        ->mergeBindings($sub->getQuery())
+        ->where('distance', '<=', $radius)
+        ->orderBy('distance', 'asc')
+        ->limit(10)
+        ->get();
+
+    // Add municipality
     foreach ($donors as $donor) {
-        $donor->municipality = !empty($donor->location)
-            ? $this->getMunicipality($donor->location)
-            : null;
+        $donor->municipality = $this->getMunicipality($donor->location);
     }
 
     return response()->json([
         'success' => true,
-        'data'    => $donors
+        'data' => $donors
     ]);
 }
 
