@@ -130,66 +130,131 @@ if ($request->hasFile('testDocument')) {
     }
  
  
+// public function search(Request $request)
+// {
+//     $request->validate([
+//         'blood_group' => 'required|string',
+//         'location'    => 'nullable|string',  
+//         'radius'      => 'nullable|numeric',
+//     ]);
+
+//     $bloodGroup = $request->blood_group;
+//     $locationInput = $request->location;  
+//     $radius = (float) ($request->radius ?? 2);  
+//     $query = DonorModel::where('blood_group', $bloodGroup)
+//         ->where('status', 1);
+
+//     $lat = null;
+//     $lng = null;
+
+//      if ($locationInput && strpos($locationInput, ',') !== false) {
+//         [$lat, $lng] = array_map('trim', explode(',', $locationInput));
+//         if (is_numeric($lat) && is_numeric($lng)) {
+//             $lat = (float) $lat;
+//             $lng = (float) $lng;
+//         } else {
+//             $lat = null;
+//             $lng = null;
+//         }
+//     }
+
+//      if (!is_null($lat) && !is_null($lng)) {
+
+//         $haversine = "
+//             (6371 * acos(
+//                 cos(radians(?)) *
+//                 cos(radians(CAST(TRIM(SUBSTRING_INDEX(location, ',', 1)) AS DECIMAL(10,6)))) *
+//                 cos(radians(CAST(TRIM(SUBSTRING_INDEX(location, ',', -1)) AS DECIMAL(10,6))) - radians(?)) +
+//                 sin(radians(?)) *
+//                 sin(radians(CAST(TRIM(SUBSTRING_INDEX(location, ',', 1)) AS DECIMAL(10,6))))
+//             ))
+//         ";
+
+//         $donors = $query->selectRaw(
+//             "contact, blood_group, location, {$haversine} AS distance",
+//             [$lat, $lng, $lat]
+//         )
+//         ->having('distance', '<=', $radius)
+//         ->orderBy('distance')
+//         ->limit(10)
+//         ->get();
+
+//     } else {
+//          $donors = $query->select('contact', 'blood_group', 'location')
+//                          ->get();
+//     }
+
+//      foreach ($donors as $donor) {
+//         if (!empty($donor->location)) {
+//             $donor->municipality = $this->getMunicipality($donor->location);
+//         } else {
+//             $donor->municipality = null;
+//         }
+//     }
+
+//     return response()->json([
+//         'success' => true,
+//         'data'    => $donors
+//     ]);
+// }
+
 public function search(Request $request)
 {
     $request->validate([
         'blood_group' => 'required|string',
-        'location'    => 'nullable|string',  
+        'location'    => 'nullable|string',
         'radius'      => 'nullable|numeric',
     ]);
 
     $bloodGroup = $request->blood_group;
-    $locationInput = $request->location;  
-    $radius = (float) ($request->radius ?? 2);  
+    $locationInput = $request->location;
+    $radius = (float) ($request->radius ?? 2);
+
     $query = DonorModel::where('blood_group', $bloodGroup)
         ->where('status', 1);
 
+    // Extract user lat/lng
     $lat = null;
     $lng = null;
 
-     if ($locationInput && strpos($locationInput, ',') !== false) {
+    if ($locationInput && strpos($locationInput, ',') !== false) {
         [$lat, $lng] = array_map('trim', explode(',', $locationInput));
-        if (is_numeric($lat) && is_numeric($lng)) {
-            $lat = (float) $lat;
-            $lng = (float) $lng;
-        } else {
-            $lat = null;
-            $lng = null;
+        if (!is_numeric($lat) || !is_numeric($lng)) {
+            $lat = $lng = null;
         }
     }
 
-     if (!is_null($lat) && !is_null($lng)) {
+    if (!is_null($lat) && !is_null($lng)) {
 
+        // PostgreSQL version of Haversine
         $haversine = "
             (6371 * acos(
                 cos(radians(?)) *
-                cos(radians(CAST(TRIM(SUBSTRING_INDEX(location, ',', 1)) AS DECIMAL(10,6)))) *
-                cos(radians(CAST(TRIM(SUBSTRING_INDEX(location, ',', -1)) AS DECIMAL(10,6))) - radians(?)) +
+                cos(radians(CAST(split_part(location, ',', 1) AS DOUBLE PRECISION))) *
+                cos(radians(CAST(split_part(location, ',', 2) AS DOUBLE PRECISION)) - radians(?)) +
                 sin(radians(?)) *
-                sin(radians(CAST(TRIM(SUBSTRING_INDEX(location, ',', 1)) AS DECIMAL(10,6))))
+                sin(radians(CAST(split_part(location, ',', 1) AS DOUBLE PRECISION)))
             ))
         ";
 
-        $donors = $query->selectRaw(
-            "contact, blood_group, location, {$haversine} AS distance",
-            [$lat, $lng, $lat]
-        )
-        ->having('distance', '<=', $radius)
-        ->orderBy('distance')
-        ->limit(10)
-        ->get();
+        $donors = $query
+            ->selectRaw("contact, blood_group, location, {$haversine} AS distance", [
+                $lat, $lng, $lat
+            ])
+            ->having('distance', '<=', $radius)
+            ->orderBy('distance')
+            ->limit(10)
+            ->get();
 
     } else {
-         $donors = $query->select('contact', 'blood_group', 'location')
-                         ->get();
+        $donors = $query->select('contact', 'blood_group', 'location')->get();
     }
 
-     foreach ($donors as $donor) {
-        if (!empty($donor->location)) {
-            $donor->municipality = $this->getMunicipality($donor->location);
-        } else {
-            $donor->municipality = null;
-        }
+    // Add Municipality
+    foreach ($donors as $donor) {
+        $donor->municipality = !empty($donor->location)
+            ? $this->getMunicipality($donor->location)
+            : null;
     }
 
     return response()->json([
@@ -197,7 +262,6 @@ public function search(Request $request)
         'data'    => $donors
     ]);
 }
-
 
  
      private function getMunicipality($location)
