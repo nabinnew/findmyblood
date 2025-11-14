@@ -227,24 +227,28 @@ public function search(Request $request)
     if (!is_null($lat) && !is_null($lng)) {
 
         // PostgreSQL version of Haversine
-        $haversine = "
-            (6371 * acos(
-                cos(radians(?)) *
-                cos(radians(CAST(split_part(location, ',', 1) AS DOUBLE PRECISION))) *
-                cos(radians(CAST(split_part(location, ',', 2) AS DOUBLE PRECISION)) - radians(?)) +
-                sin(radians(?)) *
-                sin(radians(CAST(split_part(location, ',', 1) AS DOUBLE PRECISION)))
-            ))
-        ";
+      $haversine = "
+    (6371 * acos(
+        cos(radians(?)) *
+        cos(radians(CAST(split_part(location, ',', 1) AS DOUBLE PRECISION))) *
+        cos(radians(CAST(split_part(location, ',', 2) AS DOUBLE PRECISION)) - radians(?)) +
+        sin(radians(?)) *
+        sin(radians(CAST(split_part(location, ',', 1) AS DOUBLE PRECISION)))
+    ))
+";
 
-        $donors = $query
-            ->selectRaw("contact, blood_group, location, {$haversine} AS distance", [
-                $lat, $lng, $lat
-            ])
-            ->having('distance', '<=', $radius)
-            ->orderBy('distance')
-            ->limit(10)
-            ->get();
+$donors = $query->selectRaw(
+    "contact, blood_group, location, {$haversine} AS distance",
+    [$lat, $lng, $lat] // bindings for SELECT
+)
+->havingRaw(
+    "{$haversine} <= ?",         // HAVING condition
+    [$lat, $lng, $lat, $radius]  // bindings for HAVING
+)
+->orderBy('distance')
+->limit(10)
+->get();
+
 
     } else {
         $donors = $query->select('contact', 'blood_group', 'location')->get();
