@@ -45,22 +45,13 @@ COPY . .
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 RUN composer install --no-dev --optimize-autoloader
 
-# =============================
-# Install NPM dependencies and build frontend
-# =============================
 RUN npm install
 RUN npm run build
 
-# =============================
-# Set permissions
-# =============================
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html \
     && chmod -R 777 storage bootstrap/cache
 
-# =============================
-# Configure Apache to use Laravel public folder
-# =============================
 RUN sed -i 's|/var/www/html|/var/www/html/public|g' /etc/apache2/sites-available/000-default.conf
 
 RUN echo '<Directory /var/www/html/public>\n\
@@ -69,18 +60,8 @@ RUN echo '<Directory /var/www/html/public>\n\
 </Directory>' > /etc/apache2/conf-available/laravel.conf \
     && a2enconf laravel
 
-# =============================
-# Expose port
-# =============================
+# here makea new sh file to migrate db
 EXPOSE 80
-
-# =============================
-# Copy wait-for-db script
-# =============================
 COPY wait-for-db.sh /wait-for-db.sh
 RUN chmod +x /wait-for-db.sh
-
-# =============================
-# Start container
-# =============================
 CMD ["/wait-for-db.sh"]
