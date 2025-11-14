@@ -9,7 +9,12 @@ RUN apt-get update && apt-get install -y \
     libzip-dev \
     libpng-dev \
     libpq-dev \
+    curl \
     && docker-php-ext-install pdo pdo_pgsql zip gd
+
+# --- Install Node.js (for Vite build) ---
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs
 
 # Enable Apache mod_rewrite
 RUN a2enmod rewrite
@@ -26,12 +31,16 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # Install Laravel dependencies
 RUN composer install --no-dev --optimize-autoloader
 
-# Set permissions and ownership
+# --- Build Vite assets ---
+RUN npm install
+RUN npm run build
+
+# Permissions
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html \
     && chmod -R 777 storage bootstrap/cache
 
-# Set Apache DocumentRoot to Laravel public folder
+# Set DocumentRoot to public
 RUN sed -i 's|/var/www/html|/var/www/html/public|g' /etc/apache2/sites-available/000-default.conf
 
 # Ensure Laravel .htaccess works
@@ -41,12 +50,9 @@ RUN echo '<Directory /var/www/html/public>\n\
 </Directory>' > /etc/apache2/conf-available/laravel.conf \
     && a2enconf laravel
 
-# Run Laravel migrations during build (forces DB tables to exist)
-# ⚠️ Make sure your DB credentials are correct in .env
-RUN php artisan migrate --force || echo "Migration skipped if DB not ready"
+# Run migrations
+RUN php artisan migrate --force || echo "Migration skipped"
 
-# Expose port 80
 EXPOSE 80
 
-# Start Apache in foreground
 CMD ["apache2-foreground"]
